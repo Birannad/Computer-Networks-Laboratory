@@ -32,8 +32,8 @@ This repository contains my completed labs from the **Computer Communication Net
 ---
 
 ## Requirements
-**Languages:** C, Python, Arduino
-**Tools:** Arduino IDE, GCC, Wireshark, GNS3, Cisco Packet Tracer
-**Hardware:** Arduino Uno
-**Environment:** Linux (Ubuntu recommended), Windows (for Arduino IDE)
-**Libraries:** Standard Arduino libraries (Serial, SPI, Ethernet), Standard C libraries
+-  **Languages:** C, Python, Arduino
+-   **Tools:** Arduino IDE, GCC, Wireshark, GNS3, Cisco Packet Tracer
+-   **Hardware:** Arduino Uno
+-   **Environment:** Linux (Ubuntu recommended), Windows (for Arduino IDE)
+-   **Libraries:** Standard Arduino libraries (Serial, SPI, Ethernet), Standard C libraries
