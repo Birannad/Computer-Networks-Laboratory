@@ -1,7 +1,7 @@
 # Computer-Networks-Laboratory
 This repository contains my completed labs from the **Computer Communication Networks** course at **Ben-Gurion University**. Throughout these labs, I explored fundamental and advanced topics in computer networks, including socket programming, network protocols, error detection/correction, routing protocols, and more.
 
-**All labs were programmed and implemented using Arduino boards**, providing hands-on experience with real hardware for network communication.
+**All labs were programmed and implemented using Arduino boards and Cisco Routers**, providing hands-on experience with real hardware for network communication.
 
 ## Lab List
 
@@ -23,7 +23,7 @@ This repository contains my completed labs from the **Computer Communication Net
 6. **Lab 7 - Intra AS Routing (RIP & OSPF) (Cisco Routers)**  
    Configured and analyzed RIP and OSPF routing protocols within an AS environment.
 
-7. **Lab 8 - TCP & UDP Protocols (Arduino)**  
+7. **Lab 8 - TCP & UDP Protocols (Cisco Routers)**  
    Explored connection-oriented (TCP) and connectionless (UDP) protocols. Simulated packet flows and compared protocol efficiencies using Arduino.
 
 8. **Socket Programming (Linux C)**  
