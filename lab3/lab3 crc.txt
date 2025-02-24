@@ -1,0 +1,517 @@
+// C code
+//
+
+#define PIN_TX 2                // tx data write
+#define PIN_RX 3				// rx data read
+#define PIN_TX_CLK 4
+#define PIN_RX_CLK 5
+#define BAUD_RATE 9600
+#define MASK_LSB 15          // 00001111
+#define MASK_MSB 240         // 11110000
+#define HAMMING_CODE_DATA_LENGTH 24
+#define CRC_CODE_DATA_LENGTH 12
+
+
+#define HAMMING47_ACTIVE 0
+#define CRC4_ACTIVE 1
+
+  const int DATA_LENGTH = ((HAMMING_CODE_DATA_LENGTH * HAMMING47_ACTIVE) + (CRC_CODE_DATA_LENGTH * CRC4_ACTIVE));
+  int enc_length = (HAMMING47_ACTIVE*8)+(CRC4_ACTIVE*12);
+
+  // layer1_tx variables
+  unsigned int state_tx = 0;
+  unsigned long ref_time= 0;
+  unsigned long cur_time= 0;
+  unsigned long delta= 0;            //cur_time - ref_time
+  const int BIT_TIME= 20;   //20 milli sec
+  const int HALF_BIT_TIME= 10;   //10 milli sec
+  int cnt_tx =0;
+  unsigned int buff_tx = 0;
+  bool temp_tx;
+  bool tx_l1_busy = 0;                             // tx layer 1 intiall idle   
+  unsigned int index_code_data_L1 = 0;
+
+  // layer1_rx variables
+  unsigned int last_clk_rx = 0;
+  unsigned int cnt_rx =0;
+  unsigned int buff_rx;
+  bool temp_rx;
+  bool rx_l1_busy = 0;                            // rx layer 1 intiall idle
+  unsigned int sample_data[DATA_LENGTH];
+  unsigned int cnt_sample_data = 0;
+
+  // layer2_tx variables
+  bool tx_l2_request = 0;                        // tx layer 2 intiall bussy
+  typedef enum {IDLE_TX2, ACTIVE_TX2} MOD_TX2;
+  MOD_TX2 state_tx2 = IDLE_TX2; 
+  unsigned int size_payload = 0;
+  unsigned int rand_time = 0;   //random(1,10);
+  char *payload_tx = "nadav & shir";    // buff_char hold the char
+  unsigned int index_code_data_L2 =0;
+
+
+  // layer2_rx variables  
+  bool rx_l1_busy_ref = 0;
+  typedef enum {ACTIVE_RX2, ERROR_RX2, IDLE_RX2} MOD_RX2;
+  MOD_RX2 state_rx2 = IDLE_RX2; 
+	
+
+
+  // func hamming47_tx variables
+  bool d1 = 0;
+  bool d2 = 0;
+  bool d3 = 0;
+  bool d4 = 0;
+  bool p1 = 0;
+  bool p2 = 0;
+  bool p3 = 0;
+  char buff_temp_tx = 0;
+  char buff_lsb_tx = 0;      // 4 LSB bit
+  char buff_msb_tx = 0;     // 4 MSB bit 
+  char buff_34bit = 0;
+  unsigned int code_data[DATA_LENGTH];
+  unsigned int cnt_code_data = 0;  
+    
+
+// func hamming47_rx variables
+  unsigned int cnt_code_data_rx2 =0;
+  char decode_char = 0;
+  bool d1_rx ; 
+  bool d2_rx ;
+  bool d3_rx ;
+  bool d4_rx ;
+  bool p1_rx ;
+  bool p2_rx ;
+  bool p3_rx ;
+  bool s1;
+  bool s2;
+  bool s3;
+  char buff_ham_dec;
+ 
+
+// func crc4_tx variables
+	char crc4_buff_temp_tx = 0 ;
+	char gen_poly = 0b00010011 ;						//  generator polynomial for CRC-4: x^4 +x + 1
+	unsigned int deg_poly = 5;
+    unsigned int ped_size = (deg_poly-1);
+	unsigned int temp_crc4_enc = 0;
+	char crc4_buff_mask;
+
+	unsigned int SHIFT_SIZE = (8 - deg_poly);
+	bool cur_poly; 
+    bool cur_buff;
+
+	char cnt_xor_loop =0;
+	
+	char shifted_gen_poly = (gen_poly <<= SHIFT_SIZE);
+
+// func crc4_rx variables
+
+	char crc4_dec_buff_mask;
+    char crc4_dec_char;
+	char shifted_dec_gen_poly = (gen_poly <<= SHIFT_SIZE);
+	char crc4_dec_char_valid;
+    unsigned int smp_buff_rx2;
+    unsigned int real_smp_buff_rx2;
+	unsigned int smp_buff_rx2_mask;
+	unsigned int char_to_print;
+	char final_char;
+	bool flag_crc_correct = 0;
+
+void setup()
+{ 
+  Serial.begin(BAUD_RATE);
+  pinMode(PIN_TX, OUTPUT);
+  pinMode(PIN_RX, INPUT);
+  pinMode(PIN_TX_CLK, OUTPUT);
+  pinMode(PIN_RX_CLK, INPUT);
+   digitalWrite(PIN_TX_CLK, HIGH);
+}
+
+///////////////////////////// LAYER 2 - ACTIVISION ////////////////////////////////////////
+
+void tx2_load_buff()       // add crc bit to data and load to buufer
+{  		
+  //Serial.println("func tx2_load_buff on");
+  //Serial.println("func rx2_check_frame on");
+  
+ // if( HAMMING47_ACTIVE )
+  //		hamming47_tx();
+  
+  if( CRC4_ACTIVE )
+  		crc4_tx();
+  
+  //Serial.print("buff_tx load: ");
+  //Serial.println(buff_tx);
+}
+
+
+
+
+
+
+
+void rx2_check_frame()
+{
+  
+//  if( HAMMING47_ACTIVE )
+  //		hamming47_rx();
+  
+  if( CRC4_ACTIVE )
+  		crc4_rx();
+}
+
+
+///*******************************************************************************//
+/////////////////////////////    crc4    ///////////////////////////////////////////
+///*******************************************************************************/
+
+void crc4_tx()
+{   	
+		//Serial.println("-------- crc4_tx() -------- ");
+  		while (*payload_tx != '\0')										        // inside pal_load string
+        {	 
+            crc4_buff_temp_tx = *payload_tx;
+          	//Serial.print(crc4_buff_temp_tx, BIN); 	
+          	//Serial.print("   ---encoding--->  ");
+                         
+                         
+			for( int i=0 ; i< 8 ; i++)						   					 // iterete as many times as gen_poly size
+            {
+
+              
+              
+              if( bitRead(crc4_buff_temp_tx, 7) != 0)       					 // looking for leading one's and shifting if needed if there`s 1 will make xor.
+              {
+                crc4_buff_mask = crc4_buff_temp_tx & 0b00000111 ;				
+                crc4_buff_temp_tx = crc4_buff_temp_tx ^ shifted_gen_poly;	
+                crc4_buff_temp_tx = (crc4_buff_temp_tx & 0b11111000) + (crc4_buff_mask & 0b00000111);
+     
+              } 
+              crc4_buff_temp_tx <<= 1;
+				
+
+            }
+          
+          	temp_crc4_enc = *payload_tx;									    // loading the *payload_tx with the rest encoded digits to its left
+			temp_crc4_enc <<= 4; 
+          
+          	crc4_buff_temp_tx >>= 4;
+           	crc4_buff_temp_tx = crc4_buff_temp_tx & 0b00001111 ;
+          
+          	temp_crc4_enc = temp_crc4_enc  + crc4_buff_temp_tx;
+          
+          	
+            //Serial.println(temp_crc4_enc , BIN);
+          
+          
+           *payload_tx++;   
+           
+      
+          code_data[cnt_code_data] = temp_crc4_enc ;          				   // loading crc4 encoded to code data array                      
+
+          cnt_code_data++;
+
+        	  
+        }
+  cnt_code_data = 0;
+}
+
+
+//------------------------------- RX -------------------------------------------------------
+
+
+void crc4_rx()
+{
+  		smp_buff_rx2 = smp_buff_rx2 >> 4 ;                  // shift 4 time unsigned int
+  		//Serial.print("SHIFT 4 - smp_buff_rx2: ");
+        //Serial.println(smp_buff_rx2, BIN);
+  
+  		// calculate crc for smp_buff_rx2; in the end: smp_buff_rx2 hold the reminder
+  		for( int i=0 ; i< 8 ; i++)
+        {
+          	if ((bitRead(smp_buff_rx2, 7)) != 0)
+            {
+          		smp_buff_rx2_mask = smp_buff_rx2 ^ 0b00000111;   // save the 3 lsb without change 
+              	smp_buff_rx2 = smp_buff_rx2 ^ shifted_gen_poly;  // shift the polinom to MSB, and XOR with 5 MSB smp_buff_rx2
+          		smp_buff_rx2 = (smp_buff_rx2 & 0b11111000) + (smp_buff_rx2 & 0b00000111);  // merge the result with the 3 lsb of smp_buff_rx2
+            }
+          	smp_buff_rx2 = smp_buff_rx2 << 1; 
+        }
+  
+  		//Serial.print("REMINDER - smp_buff_rx2: ");
+  		//Serial.println(smp_buff_rx2, BIN);
+  		
+  		smp_buff_rx2 = smp_buff_rx2 >> 4 ;      // the reminder is now in MSB, move to LSB
+  		
+  		Serial.print("REMINDER SHIFT - smp_buff_rx2: ");
+  		Serial.println(smp_buff_rx2, BIN);
+  		
+  		real_smp_buff_rx2 = buff_rx;
+  		real_smp_buff_rx2 = real_smp_buff_rx2 & 0b00001111;  // real_smp_buff_rx2 reminder
+  		Serial.print("MASK - real_smp_buff_rx2: ");
+  		Serial.println(real_smp_buff_rx2, BIN);
+  		
+  		if ((real_smp_buff_rx2 ^ smp_buff_rx2) == 0)
+        {
+          	  	Serial.println("SAME SAME");
+          		char_to_print = buff_rx;
+                //Serial.print("char_to_print");
+          		//Serial.println(char_to_print, BIN);
+          		char_to_print = char_to_print >> 4;
+          		//Serial.print("char_to_print SHIR4: ");
+				//Serial.println(char_to_print);
+          		final_char = char_to_print; 
+          		flag_crc_correct = 1;
+        }
+  		else 
+        {
+          		
+          		//char_to_print = buff_rx;
+          		flag_crc_correct = 0;
+        }
+  
+  
+}
+
+
+
+///*******************************************************************************//
+///////////////////////////// LAYER 2  - RX //////////////////////////////////////// 
+///*******************************************************************************//
+
+void layer2_rx()
+{		
+        
+        switch(state_rx2)
+        {
+         	  
+			  case IDLE_RX2:
+          	  
+			 // Serial.print("LAYER2 RX - IDLE - rx_l1_bussy: ");
+             // Serial.println(rx_l1_busy);
+				  if (( rx_l1_busy_ref == 1) && (rx_l1_busy !=rx_l1_busy_ref))                               // insde when rx_l1_busy == 0
+                  {
+                            //Serial.println("LAYER2 RX - IDLE, CHANGE TO ACTIVE");
+                            state_rx2 = ACTIVE_RX2;				    
+                  }
+              break;
+          
+              case ACTIVE_RX2:
+          				
+          				//Serial.println("LAYER2 RX - ACTIVE");
+          				smp_buff_rx2 = buff_rx;
+          				//Serial.print("ACTIVE - smp_buff_rx2: ");
+          				//Serial.println(smp_buff_rx2, BIN);
+          				crc4_rx();
+                    	state_rx2 = IDLE_RX2;
+
+                        if (flag_crc_correct )
+                        {
+                          	Serial.print("ACTIVE - final_char: ");
+          					Serial.println(final_char);
+                        }
+          				else
+                        {
+                            Serial.print("ERROR! ONE OR MORE BIT FLIPED");
+                            Serial.print("ACTIVE - WRONG VALUE: ");
+          					Serial.println(buff_rx);
+                        }
+           				
+        
+              break;
+
+              case ERROR_RX2:
+                    
+              break;
+        }
+        rx_l1_busy_ref = rx_l1_busy;                 // layer 2 rx start on falling edge of flag layer 1
+
+}
+
+
+
+///*******************************************************************************//
+///////////////////////////// LAYER 2  - TX //////////////////////////////////////// 
+///*******************************************************************************//
+
+
+void layer2_tx()
+{  
+  	
+	switch(state_tx2)
+    {
+        
+      	case IDLE_TX2:
+
+      		cur_time= millis();
+            delta= cur_time - ref_time;
+      		if(delta >= rand_time)         // tx has to send data
+            { 
+                   Serial.println("LAYER2 TX - IDLE_TX2: rand time pass");
+             	   state_tx2 = ACTIVE_TX2;
+
+              	   ref_time = cur_time;
+            }
+            
+      	break; 
+           
+            
+      
+      	case ACTIVE_TX2:      				
+
+            tx2_load_buff();                   // load data to buff_tx
+            if (tx_l1_busy == 0)
+            {
+              
+              if( index_code_data_L2 < DATA_LENGTH)
+              {
+                Serial.println(index_code_data_L2);
+                tx_l2_request = 1;
+                buff_tx = code_data[index_code_data_L2];
+                ref_time = millis();
+				index_code_data_L2++;
+              }
+              else 
+              {
+                Serial.println("LAYER1 TX - SENT ALL PAYLOAD");
+                rand_time = random(3000,4000);
+                state_tx2 = IDLE_TX2;
+				index_code_data_L2 =0;
+              }
+
+
+              }
+
+          	break;      
+      
+    }
+
+}
+
+
+
+ 
+///*******************************************************************************//
+///////////////////////////// LAYER 1  - TX ////////////////////////////////////////
+///*******************************************************************************//
+
+
+
+void layer1_tx()
+{
+  
+        if (tx_l2_request == 1)          // tx layer 2 request to send
+        {		
+          	  
+          	  tx_l1_busy = 1;            // tx layer 1 bussy                         
+          								 // tx_l2_request = 0;
+          	  cur_time= millis();
+              delta= cur_time - ref_time;
+	 
+                
+                      if(cnt_tx == enc_length)							   				// tx layer 1 finish -> load next char
+                      {
+                        	if(delta>=BIT_TIME)
+                            {
+							Serial.print("  BUFF TX: ");
+              				Serial.print(buff_tx, BIN);
+                            Serial.println("   <--- CHAR SENT");
+                            cnt_tx=0;                    
+                            ref_time = millis();
+                            digitalWrite(PIN_TX_CLK, HIGH);
+                        	tx_l2_request = 0;
+                        	tx_l1_busy = 0;
+                            }
+                        
+                        	else if (delta>=HALF_BIT_TIME)
+                            {
+                              	digitalWrite(PIN_TX_CLK , LOW);
+                            }
+                              
+                      }
+          
+
+                      else if(delta>=BIT_TIME)            					//cnt_tx<8  // at active state
+                      {
+                            ref_time = millis();
+                            digitalWrite(PIN_TX_CLK, HIGH);        			// clk=1 -> send new bit
+                            temp_tx = bitRead(buff_tx,cnt_tx); 
+                            digitalWrite(PIN_TX, temp_tx);
+                            cnt_tx++;
+                      } 
+                      else if(delta>=HALF_BIT_TIME)                
+                      {
+                            digitalWrite(PIN_TX_CLK , LOW);      		    // clk=0 -> for read data
+                      }
+                
+         }
+                 
+
+
+}
+  
+///*******************************************************************************//
+///////////////////////////// LAYER 1  - RX ////////////////////////////////////////  
+///*******************************************************************************//
+  
+void layer1_rx()
+ {
+        unsigned int curr_clk = digitalRead(PIN_RX_CLK);
+
+        if((curr_clk == 0)  && (last_clk_rx != curr_clk))      
+        {
+
+            if (cnt_rx != enc_length+1)
+            {
+                rx_l1_busy = 1;
+              	if (cnt_rx > 0)
+                {
+                temp_rx = digitalRead(PIN_RX);
+                bitWrite(buff_rx , cnt_rx-1 , temp_rx);
+                //Serial.print("LAYER1 RX - rx_l1_busy ");
+                //Serial.println(rx_l1_busy);
+              	//Serial.print("LAYER1 RX - temp_rx: ");
+			    //Serial.println(temp_rx);
+              	cnt_rx++;
+                }
+              	else
+                {
+                  cnt_rx++;
+                }
+            }
+            if(cnt_rx == enc_length+1)
+            {
+                Serial.print("  BUFF RX: ");
+                Serial.println(buff_rx, BIN);
+                rx_l1_busy = 0;
+                cnt_rx=0;
+                //Serial.print("LAYER1 RX - rx_l1_busy ");
+                //Serial.println(rx_l1_busy);
+            }	
+                                
+        }                          
+        
+  		last_clk_rx = curr_clk;
+
+                
+                   			   // rx get frame, ready to send to layer 2            
+ } 
+
+
+  
+///*******************************************************************************//
+///////////////////////////// VOID LOOP ////////////////////////////////////////
+///*******************************************************************************//
+
+
+void loop()
+{  
+  layer1_tx();
+  layer1_rx();
+  
+  layer2_tx();
+  layer2_rx();
+}
+  
+  

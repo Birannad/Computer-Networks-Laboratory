@@ -1,0 +1,103 @@
+// C code
+//
+
+#define PIN_TX 2                // tx data write
+#define PIN_RX 3				// rx data read
+#define PIN_TX_CLK 4
+#define PIN_RX_CLK 5
+#define BAUD_RATE 9600
+
+
+  // usart_tx variables
+  unsigned int state_tx = 0;
+  unsigned long ref_time= 0;
+  unsigned long cur_time= 0;
+  unsigned long delta= 0;            //cur_time - ref_time
+  unsigned int rand_time = 0;//random(1,10);
+  const int BIT_TIME= 20;   //20 milli sec
+  const int HALF_BIT_TIME= 10;   //10 milli sec
+  int cnt_tx =0;
+  char buff_tx = '?';
+  bool temp_tx;
+    
+  // usart_rx variables
+  unsigned int last_clk_rx = 0;
+  unsigned int cnt_rx =0;
+  char buff_rx;
+  bool temp_rx;
+
+
+    
+void setup()
+{ 
+  Serial.begin(BAUD_RATE);
+  pinMode(PIN_TX, OUTPUT);
+  pinMode(PIN_RX, INPUT);
+  pinMode(PIN_TX_CLK, OUTPUT);
+  pinMode(PIN_RX_CLK, INPUT);
+}
+
+
+void usart_tx()
+{
+  cur_time= millis();
+  delta= cur_time - ref_time;
+  if (state_tx == 0)         //hold state
+  	{
+    if(delta >= rand_time)
+    	{
+        state_tx =1;     //state to active
+        ref_time= cur_time;
+   	    }
+    } 
+  else if(cnt_tx==8)
+    	{
+        cnt_tx=0;
+        rand_time = random(50,100);
+        digitalWrite(PIN_TX_CLK, HIGH);    
+        ref_time= cur_time;
+  	    state_tx=0;
+		}
+  else if(delta>=BIT_TIME)            //cnt_tx<8  // at active state
+        {
+        ref_time = cur_time;
+        digitalWrite(PIN_TX_CLK, HIGH);
+        temp_tx = bitRead(buff_tx,cnt_tx); 
+        digitalWrite(PIN_TX, temp_tx);
+        cnt_tx++;
+        } 
+  else if(delta>=HALF_BIT_TIME)
+    	{
+        digitalWrite(PIN_TX_CLK , LOW);
+        }
+} 
+
+void usart_rx()
+ {
+  unsigned int curr_clk = digitalRead(PIN_RX_CLK);
+  if(last_clk_rx != curr_clk)
+  	{
+    if (curr_clk == 0)
+    	{
+        temp_rx = digitalRead(PIN_RX);
+        bitWrite(buff_rx,cnt_rx,temp_rx);
+        cnt_rx++;
+  		}
+    if(cnt_rx == 8)
+    	{
+      	Serial.println( buff_rx);
+        cnt_rx=0;
+      	}
+    }
+  last_clk_rx = curr_clk;
+}
+
+  
+  
+void loop()
+{  
+  usart_tx();
+  usart_rx();
+}
+  
+  

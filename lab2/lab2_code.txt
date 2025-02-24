@@ -1,0 +1,324 @@
+// C code
+//
+
+#define PIN_TX 2                // tx data write
+#define PIN_RX 3				// rx data read
+#define BAUD_RATE 9600
+#define BIT_TIME 80
+#define SMP_TIME BIT_TIME/4           // reva bit
+#define	DATA_SIZE 8
+#define RAND_LOW 100
+#define RAND_HIGH 200
+
+
+
+// usart_tx variables
+typedef enum {IDLE_TX, START_TX, DATA_TX, PARITY_TX, STOP_TX} MOD_TX;
+MOD_TX state_tx = IDLE_TX;
+unsigned int ref_tx = 0;
+unsigned int cur_tx = 0;
+unsigned int delta_tx = 0;
+unsigned int temp_tx = 0;
+unsigned int timex = 0;
+char buff_tx = 'U';        //0b01010101
+unsigned int cnt_tx = 0;
+bool parity_tx = 1;        //odd 
+unsigned int rand_tx = 0;
+
+// usart_rx variables
+typedef enum {IDLE_RX, START_RX, DATA_RX, PARITY_RX, STOP_RX, ERROR} MOD_RX;
+MOD_RX state_rx = IDLE_RX;  
+char buff_rx = 0;
+unsigned int cnt_rx = 0;
+bool parity_rx = 1;        //odd
+unsigned int ref_rx = 0;
+unsigned int cur_rx = 0;
+unsigned int delta_rx = 0;
+bool zero_flag = 1;
+
+// func sempler variables
+typedef enum {WAIT, SMP, SMP_RSLT} MOD_SMP;
+MOD_SMP state_smp = WAIT;
+bool val_smp = 0; 
+unsigned int ref_smp = 0;
+unsigned int cur_smp = 0;
+unsigned int delta_smp = 0;         // d = cur - ref
+bool temp_smp = 0;
+char buff_smp = 0;
+unsigned int cnt_smp = 0;
+bool ret_smp = 0;
+
+
+int temp_PIN;
+
+void setup()
+{
+  Serial.begin(BAUD_RATE);
+  pinMode(PIN_TX, OUTPUT);
+  pinMode(PIN_RX, INPUT);
+}
+
+//#########################  smpler()  ##################################
+
+void smpler()
+{
+	 switch(state_smp)
+     {
+		   case WAIT:
+       			 cur_smp = millis();
+                 delta_smp = cur_smp - ref_smp;
+       			 if (delta_smp < SMP_TIME)
+                 {
+                    state_smp = WAIT;
+                 }
+       			 else if (delta_smp >= SMP_TIME)                 
+                 {
+
+                   	  if (cnt_smp == 3)
+                      {
+                           state_smp = SMP_RSLT;
+                           cnt_smp = 0;
+                           break;
+                      }
+                      else
+                      {  
+                  		   state_smp = SMP; 
+                      }
+                 }
+                 break;
+       			
+           
+       		case SMP:
+       			 temp_smp = digitalRead(PIN_RX);
+       			 bitWrite(buff_smp, cnt_smp, temp_smp);
+       			 cnt_smp++ ;
+
+       			 ref_smp = cur_smp;
+                 state_smp = WAIT;
+                 if (cnt_smp == 3)
+                 {
+                   val_smp = temp_smp;
+                 }
+                 else
+                 {
+       			 val_smp = 2;
+                 }
+       			 break;
+       
+       
+      		case SMP_RSLT:
+       			 if (buff_smp == 0)
+                 {
+       					val_smp = 0;            
+                 }
+       			 else if (buff_smp == 7)
+                 {
+                        val_smp = 1;
+                 }
+       			 else
+                 {
+                         val_smp = -1;
+                 }
+       			state_smp = WAIT;
+       			ref_smp = cur_smp;
+       			break;
+       
+     }
+}
+  
+  
+//######################### usart_tx() ##################################  
+
+void usart_tx()
+{	
+	switch(state_tx)
+    {	
+      	case IDLE_TX:
+      		  cur_tx = millis();
+ 	    	  delta_tx = cur_tx - ref_tx;
+
+              if(delta_tx >= rand_tx)
+              {
+                state_tx = START_TX;
+                ref_tx = cur_tx;
+  		    break;
+      
+      	case START_TX:
+      		digitalWrite(PIN_TX, LOW);
+  		    cur_tx= millis();
+    		delta_tx = cur_tx - ref_tx;
+    			if (delta_tx >= BIT_TIME)
+                {
+                  state_tx = DATA_TX;
+                  ref_tx = cur_tx ;
+                }
+            break;
+           
+      
+      	case DATA_TX:
+            temp_tx = bitRead(buff_tx, cnt_tx);
+            digitalWrite(PIN_TX, temp_tx);
+            cur_tx = millis();
+            delta_tx = cur_tx - ref_tx; 
+            if (delta_tx >= BIT_TIME)
+            {                 
+               	 parity_tx  = parity_tx ^ temp_tx;
+                 cnt_tx++;	           
+                 ref_tx = cur_tx;
+              	 if (cnt_tx == DATA_SIZE)
+                 { 
+                      state_tx = PARITY_TX; 
+                      cnt_tx = 0;
+                 }              
+             }    
+    		break;
+    	
+      	case PARITY_TX:
+      			digitalWrite(PIN_TX, parity_tx);
+  		    	cur_tx= millis();
+    			delta_tx = cur_tx - ref_tx;
+    			if (delta_tx >= BIT_TIME)
+                {
+                  state_tx = STOP_TX;
+                  ref_tx = cur_tx ;
+                }
+            break;
+           
+         case STOP_TX:
+                digitalWrite(PIN_TX, HIGH);
+                cur_tx= millis();
+                delta_tx = cur_tx - ref_tx;
+    			if (delta_tx >= BIT_TIME)
+                {
+                    state_tx = IDLE_TX;
+                    ref_tx = cur_tx ;
+                  	rand_tx = random(RAND_LOW, RAND_HIGH);
+                    Serial.print("wait rand time: "); 
+                    Serial.println(rand_tx);
+
+                }
+            break;
+
+    }
+
+}
+//######################### usart_rx() ##################################
+}
+void usart_rx()
+{
+  	switch(state_rx)
+    {		
+      		case IDLE_RX:
+
+     			 zero_flag = digitalRead(PIN_RX);	
+                 if(zero_flag == 0)
+                 {
+                      state_rx = START_RX;
+                      ref_rx = millis();
+                 }
+                break;			 
+
+      		case START_RX:
+      			 smpler();
+                 cur_rx = millis();
+                 delta_rx = cur_rx - ref_rx; 
+                 if (delta_rx >= BIT_TIME)		
+                 {
+                   
+                       if (val_smp == 0)
+                       {
+                             state_rx = DATA_RX;
+                       }
+                       else
+                       {
+                         	 state_rx = ERROR;
+                       }
+                 ref_rx = cur_rx;
+                 }
+      			break;
+      				
+      		case DATA_RX:
+      			  smpler();
+							
+                  cur_rx = millis();
+                  delta_rx = cur_rx - ref_rx; 
+                  if (delta_rx >= BIT_TIME)      			 
+                  {
+                       bitWrite(buff_rx, cnt_rx, val_smp);
+                       Serial.print("cnt_rx is:    ");
+                       Serial.println(cnt_rx);
+                       cnt_rx++ ;                      	
+                       parity_rx = parity_rx ^ val_smp;
+
+                       if (cnt_rx == DATA_SIZE)
+                        { 
+                         			
+                         			Serial.print("buff rx:  ");
+                         			Serial.println(buff_rx);
+
+									buff_rx =0;
+
+                           state_rx = PARITY_RX; 
+                           cnt_rx = 0;
+                        }
+					   ref_rx = cur_rx;
+                  }
+      			break;
+      
+     		 case PARITY_RX:
+      				smpler();
+     				 cur_rx = millis();
+                     delta_rx = cur_rx - ref_rx; 
+                     if (delta_rx >= BIT_TIME)
+                     {   
+                       if (val_smp == parity_rx)
+                        { 
+                           state_rx = STOP_RX;
+                        }
+                        else
+                        {
+                        state_rx = ERROR;
+                        Serial.println("ERROR- PARITY BIT NOT EQUAL");
+                        }
+      				ref_rx = cur_rx;
+                   break;
+			
+      
+      		  case STOP_RX:
+      			 smpler();
+                 cur_rx = millis();
+                 delta_rx = cur_rx - ref_rx; 
+                 if (delta_rx >= BIT_TIME)
+                 {
+                       if (val_smp == 1)
+                       {
+                             state_rx = IDLE_RX;
+                         	 cnt_rx = 0;
+                        	 Serial.print("STOP BIT "); 
+                             Serial.println(val_smp);
+                       }
+                       else
+                       {
+                         state_rx = ERROR;
+                         Serial.print("ERROR- STOP BIT NOT ARRIVED");
+                       }
+                 ref_rx = cur_rx;
+                 }
+      			break;
+      		
+      		 case ERROR:
+      				
+      			break;
+    }    
+  	
+}
+}
+
+void loop()
+{
+  usart_tx();
+  usart_rx();
+}
+  
+  
+  
