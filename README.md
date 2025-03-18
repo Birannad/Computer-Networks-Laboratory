@@ -29,7 +29,7 @@ This repository contains my completed labs from the **Computer Communication Net
 8. **Socket Programming (Linux C)**  
    Implemented client-server applications using Linux sockets in C. Included TCP/UDP examples demonstrating real-world network communication.
 
----
+----
 
 ## Requirements
 -  **Languages:** C, Python, Arduino
